@@ -67,3 +67,17 @@ stages:
                   dockerRegistryEndpoint: 'ACR'
                   kubernetesServiceConnection: 'AKS-Tailspin-Cluster'
                   namespace: 'default'
+            - task: KubernetesManifest@0
+              displayName: Deploy to Kubernetes cluster
+              inputs:
+                action: deploy
+                kubernetesServiceConnection: 'AKS-Tailspin-Cluster'
+                namespace: 'default'
+                manifests: |
+                  $(Pipeline.Workspace)/manifests/deployment.yml
+                  $(Pipeline.Workspace)/manifests/service.yml
+                imagePullSecrets: |
+                  $(imagePullSecret)
+                containers: |
+                  $(RegistryName)/$(webRepository):$(tag)
+                  $(RegistryName)/$(leaderboardRepository):$(tag)
