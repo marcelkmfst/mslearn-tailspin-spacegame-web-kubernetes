@@ -4,6 +4,8 @@ trigger:
 variables:
   buildConfiguration: 'Release'
   webRepository: 'web'
+  leaderboardRepository: 'leaderboard'
+  imagePullSecret: 'secret'
   tag: '$(Build.BuildId)'
 
 stages:
@@ -22,23 +24,46 @@ stages:
         buildContext: $(Build.Repository.LocalPath)
         repository: $(webRepository)
         dockerfile: '$(Build.SourcesDirectory)/Tailspin.SpaceGame.Web/Dockerfile'
-        containerRegistry: 'Container Registry Connection'
+        containerRegistry: 'ACR'
+        tags: |
+          $(tag)
+          
+    - task: Docker@2
+      displayName: 'Build and push the leaderboard image to container registry'
+      inputs:
+        command: buildAndPush
+        buildContext: $(Build.Repository.LocalPath)
+        repository: $(leaderboardRepository)
+        dockerfile: '$(Build.SourcesDirectory)/Tailspin.SpaceGame.LeaderboardContainer/Dockerfile'
+        containerRegistry: 'ACR'
         tags: |
           $(tag)
 
+    - publish: '$(Build.SourcesDirectory)/mainfests'
+      artifact: manifests
+
 - stage: 'Deploy'
-  displayName: 'Deploy the container'
+  displayName: 'Deploy the containers'
   dependsOn: Build
   jobs:
-  - job: 'Deploy'
-    displayName: 'Deploy job'
-    pool:
-      vmImage: 'ubuntu-20.04'
-    variables:
-    - group: Release
-    steps:
-    - task: AzureWebAppContainer@1
-      inputs:
-       appName: $(WebAppName)
-       azureSubscription: 'Resource Manager - Tailspin - Space Game'
-       imageName: $(RegistryName)/$(webRepository):$(build.buildId)
+    - deployment: Deploy
+      displayName: Deploy
+      pool:
+        vmImage: 'ubuntu-20.04'
+      environment: 'spike.default'
+      variables:
+      - group: Release
+      strategy:
+        runOnce:
+          deploy:
+            steps:
+            - download: current
+              artifact: manifests
+            - task: KubernetesManifest@0
+              displayName: Create imagePullSecret
+              inputs:
+                  action: createSecret
+                  secretName: $(imagePullSecret)
+                  dockerRegistryEndpoint: 'ACR'
+                  kubernetesServiceConnection: 'AKS-Tailspin-Cluster'
+                  namespace: 'default'
